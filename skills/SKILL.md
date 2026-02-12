@@ -257,12 +257,6 @@ polygon-agent give-feedback --wallet <name> --agent-id <id> --value <score> [--t
 - **Clear naming**: `wallet create` vs `create-request`, `wallet start-session` vs `ingest-session`
 - **Single entry point**: `polygon-agent.mjs` routes all commands
 
-### Upstream Fixes Integrated
-- **IndexerGateway URL**: Commit `6034ce6` - uses correct `/rpc/IndexerGateway/...` endpoint
-- **RPC Fallback**: Commit `722ea1b` - queries RPC when indexer omits native balance (testnets)
-- **dotenv Support**: Loads `.env.local` for local development
-- **Package Upgrades**: Uses `@0xsequence` beta.15 (latest)
-
 ### Secure Storage
 - **Encrypted Config**: Private keys encrypted with AES-256-GCM
 - **Auto-Generated Key**: Encryption key at `~/.polygon-agent/.encryption-key` (0600 permissions)

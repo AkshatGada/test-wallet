@@ -4,65 +4,9 @@
 // Step 3: Create project and get access key
 
 import { ethers } from 'ethers'
+import { generateEthAuthProof } from '../../lib/ethauth.mjs'
 import { saveBuilderConfig, loadBuilderConfig } from '../../lib/storage.mjs'
 import { getArg, hasFlag } from '../../lib/utils.mjs'
-
-// ETHAuth constants
-const ETH_AUTH_VERSION = '1'
-const ETH_AUTH_PREFIX = 'eth'
-const ETH_AUTH_DOMAIN = {
-  name: 'ETHAuth',
-  version: '1',
-}
-
-// Generate ETHAuth proof (condensed from builder-cli/src/lib/ethauth.ts)
-async function generateEthAuthProof(privateKey) {
-  const wallet = new ethers.Wallet(privateKey)
-  const now = Math.floor(Date.now() / 1000)
-
-  const claims = {
-    app: 'polygon-agent-kit',
-    iat: now,
-    exp: now + 3600, // 1 hour
-    v: ETH_AUTH_VERSION
-  }
-
-  // Build EIP-712 typed data
-  const types = []
-  const message = {}
-
-  if (claims.app) {
-    types.push({ name: 'app', type: 'string' })
-    message.app = claims.app
-  }
-  if (claims.iat) {
-    types.push({ name: 'iat', type: 'int64' })
-    message.iat = claims.iat
-  }
-  if (claims.exp) {
-    types.push({ name: 'exp', type: 'int64' })
-    message.exp = claims.exp
-  }
-  if (claims.v) {
-    types.push({ name: 'v', type: 'string' })
-    message.v = claims.v
-  }
-
-  const typedData = {
-    domain: ETH_AUTH_DOMAIN,
-    types: { Claims: types },
-    message,
-    primaryType: 'Claims'
-  }
-
-  // Sign with EIP-712
-  const signature = await wallet.signTypedData(typedData.domain, typedData.types, typedData.message)
-
-  // Encode proof: eth.<address>.<base64-claims>.<signature>
-  const address = wallet.address.toLowerCase()
-  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString('base64url')
-  return `${ETH_AUTH_PREFIX}.${address}.${encodedClaims}.${signature}`
-}
 
 // Get auth token from Sequence Builder API
 async function getAuthToken(proofString) {
@@ -72,7 +16,7 @@ async function getAuthToken(proofString) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ethAuth: proofString })
+    body: JSON.stringify({ ethauthProof: proofString })
   })
 
   if (!response.ok) {
@@ -120,7 +64,7 @@ async function createProject(name, jwtToken) {
 // Get default access key for project
 async function getDefaultAccessKey(projectId, jwtToken) {
   const apiUrl = process.env.SEQUENCE_BUILDER_API_URL || 'https://api.sequence.build'
-  const url = `${apiUrl}/rpc/Builder/GetDefaultAccessKey`
+  const url = `${apiUrl}/rpc/QuotaControl/GetDefaultAccessKey`
 
   const response = await fetch(url, {
     method: 'POST',

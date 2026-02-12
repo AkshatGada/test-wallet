@@ -1,6 +1,6 @@
 ---
 name: polygon-agent-kit
-description: Complete Polygon agent development toolkit. Builder setup (1 command), ecosystem wallet (session-based), token operations, 8004 registry. Chain-specific indexer with RPC fallback, encrypted storage at ~/.polygon-agent/
+description: Complete Polygon agent development toolkit with full ERC-8004 integration. Builder setup (1 command), ecosystem wallet (session-based), token operations (send POL/ERC20), agent registry (identity + reputation), feedback system. Chain-specific indexer with RPC fallback, encrypted storage at ~/.polygon-agent/
 ---
 
 # Polygon Agent Kit
@@ -94,25 +94,81 @@ node cli/polygon-agent.mjs balances --wallet main
 # Output: { ok, walletName, walletAddress, chainId, chain, balances: [...] }
 ```
 
-**Send & Swap** (coming soon):
+**Send native POL**:
 ```bash
-# Send tokens (placeholder)
-node cli/polygon-agent.mjs send --wallet main --symbol USDC --to 0x... --amount 10 --broadcast
+node cli/polygon-agent.mjs send-native --wallet main --to 0x... --amount 1.5 --broadcast
+```
 
-# Swap tokens (placeholder)
+**Send ERC20 tokens**:
+```bash
+node cli/polygon-agent.mjs send-token --wallet main --symbol USDC --to 0x... --amount 10 --broadcast
+```
+
+**Swap** (coming soon):
+```bash
 node cli/polygon-agent.mjs swap --wallet main --from USDC --to USDT --amount 5 --broadcast
 ```
 
-### Phase 4: 8004 Registry (Placeholder)
-
-```bash
-node cli/polygon-agent.mjs register --wallet main --name "MyAgent" --metadata "ipfs://..."
-# Error: Registry integration coming soon
-```
+### Phase 4: ERC-8004 Agent Registry
 
 **Contracts** (Polygon mainnet):
 - IdentityRegistry: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`
 - ReputationRegistry: `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`
+
+**Register your agent**:
+```bash
+# Simple registration
+node cli/polygon-agent.mjs register --wallet main --name "MyAgent" --broadcast
+
+# With metadata URI
+node cli/polygon-agent.mjs register --wallet main --name "MyAgent" \
+  --agent-uri "ipfs://Qm..." --broadcast
+
+# With custom metadata
+node cli/polygon-agent.mjs register --wallet main --name "MyAgent" \
+  --agent-uri "ipfs://Qm..." \
+  --metadata "version=1.0,type=trading" \
+  --broadcast
+```
+
+**Output**:
+```json
+{
+  "ok": true,
+  "contract": "IdentityRegistry",
+  "agentName": "MyAgent",
+  "txHash": "0x...",
+  "explorerUrl": "https://polygonscan.com/tx/0x...",
+  "message": "Agent registered! Check transaction for agentId in Registered event."
+}
+```
+
+**Query agent information**:
+```bash
+# Get agent's payment wallet
+node cli/polygon-agent.mjs agent-wallet --agent-id 123
+
+# Get agent metadata
+node cli/polygon-agent.mjs agent-metadata --agent-id 123 --key name
+
+# Get reputation score
+node cli/polygon-agent.mjs reputation --agent-id 123
+
+# Read all feedback
+node cli/polygon-agent.mjs read-feedback --agent-id 123
+```
+
+**Submit feedback on an agent**:
+```bash
+node cli/polygon-agent.mjs give-feedback \
+  --wallet main \
+  --agent-id 123 \
+  --value 4.5 \
+  --tag1 "helpful" \
+  --tag2 "fast" \
+  --endpoint "api" \
+  --broadcast
+```
 
 ## Commands Reference
 
@@ -140,20 +196,37 @@ polygon-agent wallet list
 
 ```bash
 polygon-agent balances --wallet <name> [--chain <chain>]
-polygon-agent send --wallet <name> --symbol <SYM> --to <addr> --amount <num> [--broadcast]
+polygon-agent send-native --wallet <name> --to <addr> --amount <num> [--broadcast]
+polygon-agent send-token --wallet <name> --symbol <SYM> --to <addr> --amount <num> [--broadcast]
 polygon-agent swap --wallet <name> --from <SYM> --to <SYM> --amount <num> [--broadcast]
 ```
 
 - `balances`: Uses IndexerGateway with RPC fallback for testnets
-- `send`/`swap`: Placeholders (coming soon)
+- `send-native`: Send native POL/MATIC via DappClient
+- `send-token`: Send ERC20 by symbol (resolves via token-directory)
+- `swap`: Placeholder (requires @0xtrails/api)
 
-### Registry
+### Registry (ERC-8004)
 
+**Registration**:
 ```bash
-polygon-agent register --wallet <name> --name <agent-name> --metadata <ipfs-hash>
+polygon-agent register --wallet <name> --name <agent-name> [--agent-uri <uri>] [--metadata <k=v,k=v>] [--broadcast]
 ```
 
-Placeholder - full 8004 integration coming soon.
+**Query**:
+```bash
+polygon-agent agent-wallet --agent-id <id>           # Get payment wallet
+polygon-agent agent-metadata --agent-id <id> --key <key>  # Get metadata value
+polygon-agent reputation --agent-id <id> [--tag1 <tag>]   # Get reputation score
+polygon-agent read-feedback --agent-id <id>               # Read all feedback
+```
+
+**Feedback**:
+```bash
+polygon-agent give-feedback --wallet <name> --agent-id <id> --value <score> [--tag1 <tag>] [--tag2 <tag>] [--endpoint <endpoint>] [--broadcast]
+```
+
+**Contracts**: IdentityRegistry (`0x8004A169...`), ReputationRegistry (`0x8004BAa1...`)
 
 ## Environment Variables
 
@@ -191,6 +264,53 @@ Placeholder - full 8004 integration coming soon.
 - **Auto-Generated Key**: Encryption key at `~/.polygon-agent/.encryption-key` (0600 permissions)
 - **Cross-Platform**: File-based storage (no macOS Keychain dependency)
 
+### ERC-8004 Agent Registry
+
+The polygon-agent-kit includes full **ERC-8004 Trustless Agents** integration for Polygon:
+
+**What is ERC-8004?**
+- **Decentralized agent identity**: Portable, censorship-resistant identifiers (ERC-721 NFTs)
+- **Reputation system**: On-chain feedback collection with value + tags
+- **Trust validation**: Discover and choose agents across organizational boundaries
+
+**Three Core Components**:
+
+1. **IdentityRegistry** (`0x8004A169...`)
+   - Register agents with metadata URIs (IPFS, HTTPS, data URIs)
+   - Set payment wallet (requires EIP-712 or ERC-1271 signature)
+   - Store custom metadata (key-value pairs)
+   - Returns agentId (ERC-721 token ID)
+
+2. **ReputationRegistry** (`0x8004BAa1...`)
+   - Submit feedback (score with decimals + optional tags + endpoint)
+   - Aggregate reputation scores across clients
+   - Tag-based filtering (e.g., "helpful", "fast", "api")
+   - Revoke feedback capability
+
+3. **ValidationRegistry** (not yet integrated)
+   - Validator smart contracts for work verification
+   - Stake-secured re-execution, zkML proofs, TEE oracles
+
+**Agent Registration Flow**:
+```
+1. polygon-agent register --wallet main --name "MyAgent" --broadcast
+   → Mints ERC-721 NFT with agentId
+   → Emits Registered event with agentId, owner, URI
+
+2. Users interact with agent
+   → Agent provides services via endpoints (A2A, MCP, etc.)
+
+3. polygon-agent give-feedback --agent-id 123 --value 4.5 --tag1 "helpful"
+   → Stores on-chain feedback
+   → Updates reputation score
+
+4. polygon-agent reputation --agent-id 123
+   → Returns aggregated reputation score
+   → Filters by tags if specified
+```
+
+**Spec**: https://eips.ethereum.org/EIPS/eip-8004
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -217,19 +337,32 @@ Placeholder - full 8004 integration coming soon.
 
 ## Development Status
 
-### ✅ Implemented
-- Builder setup (3-in-1)
-- Wallet create + start-session
-- Balances with upstream fixes
-- Registry placeholder
-- Encrypted storage
-- SKILL.md documentation
+### ✅ Implemented Features
+
+**Core Toolkit**:
+- ✅ Builder setup (3-in-1 condensed command)
+- ✅ Wallet create + start-session (NaCl encryption, @filename support)
+- ✅ Encrypted storage (AES-256-GCM, cross-platform)
+- ✅ IndexerGateway with RPC fallback (upstream fixes)
+
+**Token Operations**:
+- ✅ Balances (IndexerGateway + RPC fallback)
+- ✅ Send native POL/MATIC (via DappClient)
+- ✅ Send ERC20 tokens (symbol resolution via token-directory)
+- ✅ Token directory integration (symbol → address mapping)
+
+**ERC-8004 Registry** (Full Implementation):
+- ✅ Agent registration (IdentityRegistry)
+- ✅ Agent metadata queries
+- ✅ Agent wallet management
+- ✅ Reputation scores (ReputationRegistry)
+- ✅ Feedback submission and queries
+- ✅ Tag-based filtering
 
 ### 🚧 Coming Soon
-- Send tokens (requires @0xsequence/wallet integration)
-- Swap (requires Trails integration)
-- 8004 Registry (IdentityRegistry + ReputationRegistry)
-- Token directory integration (symbol → address mapping)
+- Swap functionality (requires @0xtrails/api package)
+- ValidationRegistry integration (ERC-8004 validation layer)
+- Multi-chain support (Base, Arbitrum, Optimism)
 
 ## Example: Full Agent Flow
 
@@ -280,9 +413,3 @@ node cli/polygon-agent.mjs wallet list
 - **Project Creation**: Single API call with JWT auth
 - **Access Key**: Default key auto-fetched via `GetDefaultAccessKey`
 
-## Notes
-
-- **Breaking Change**: This is a NEW project, not compatible with existing openclaw-ecosystem-wallet-skill
-- **Reference Only**: Builder-cli and seq-eco code used as reference (not copied)
-- **Package Versions**: Uses latest beta.15 (learned from upstream commit 0323e32)
-- **Backward Compatibility**: N/A (fresh start with agent-first design)

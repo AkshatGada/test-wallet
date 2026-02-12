@@ -44,6 +44,21 @@ async function main() {
     } else if (cmd === 'register') {
       const { registerAgent } = await import('./commands/registry.mjs')
       await registerAgent()
+    } else if (cmd === 'agent-wallet') {
+      const { getAgentWallet } = await import('./commands/registry.mjs')
+      await getAgentWallet()
+    } else if (cmd === 'agent-metadata') {
+      const { getMetadata } = await import('./commands/registry.mjs')
+      await getMetadata()
+    } else if (cmd === 'reputation') {
+      const { getReputation } = await import('./commands/registry.mjs')
+      await getReputation()
+    } else if (cmd === 'give-feedback') {
+      const { giveFeedback } = await import('./commands/registry.mjs')
+      await giveFeedback()
+    } else if (cmd === 'read-feedback') {
+      const { readAllFeedback } = await import('./commands/registry.mjs')
+      await readAllFeedback()
     } else {
       showHelp()
     }
@@ -76,8 +91,13 @@ OPERATIONS (Token & swap):
   send-token --wallet <name> --symbol   Send ERC20 by symbol
   swap --wallet <name> --from --to      Execute DEX swap (coming soon)
 
-REGISTRY (8004 on Polygon):
-  register --wallet <name> --name <n>   Register agent on 8004 (coming soon)
+REGISTRY (ERC-8004 on Polygon):
+  register --wallet <name> --name <n>   Register agent identity
+  agent-wallet --agent-id <id>          Get agent payment wallet
+  agent-metadata --agent-id <id> --key  Get agent metadata
+  reputation --agent-id <id>            Get agent reputation score
+  give-feedback --wallet <name> --agent-id <id> --value <score>  Submit feedback
+  read-feedback --agent-id <id>         Read all agent feedback
 
 Environment Variables:
   SEQUENCE_PROJECT_ACCESS_KEY           Project access key (from builder setup)

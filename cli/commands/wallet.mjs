@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import nacl from 'tweetnacl'
 import sealedbox from 'tweetnacl-sealedbox-js'
 import { saveWalletSession, loadWalletSession, saveWalletRequest, loadWalletRequest, listWallets } from '../../lib/storage.mjs'
-import { getArg, hasFlag, resolveNetwork } from '../../lib/utils.mjs'
+import { getArg, hasFlag, normalizeChain, resolveNetwork } from '../../lib/utils.mjs'
 
 // Base64 URL encode
 function b64urlEncode(buf) {
@@ -37,7 +37,8 @@ export async function walletCreate() {
   }
 
   try {
-    const chain = resolveNetwork(chainArg)
+    // Normalize chain name (don't resolve to Network object yet - that happens in wallet start-session)
+    const chain = normalizeChain(chainArg)
     const connectorUrl = process.env.SEQUENCE_ECOSYSTEM_CONNECTOR_URL
 
     if (!connectorUrl) {
@@ -53,12 +54,11 @@ export async function walletCreate() {
     const createdAt = new Date().toISOString()
     const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2 hours
 
-    // Save request state
+    // Save request state (store chain as string, not Network object)
     await saveWalletRequest(rid, {
       rid,
       walletName: name,
-      chain: chain.name,
-      chainId: chain.chainId,
+      chain,  // Just the normalized string like "polygon"
       createdAt,
       expiresAt,
       publicKeyB64u: pub,
@@ -71,7 +71,7 @@ export async function walletCreate() {
     url.searchParams.set('rid', rid)
     url.searchParams.set('wallet', name)
     url.searchParams.set('pub', pub)
-    url.searchParams.set('chain', chain.name)
+    url.searchParams.set('chain', chain)  // String chain name
 
     // Add project access key if available
     const projectAccessKey = getArg(args, '--access-key') || process.env.SEQUENCE_PROJECT_ACCESS_KEY
@@ -88,8 +88,7 @@ export async function walletCreate() {
     console.log(JSON.stringify({
       ok: true,
       walletName: name,
-      chain: chain.name,
-      chainId: chain.chainId,
+      chain,  // String chain name
       rid,
       url: url.toString(),
       expiresAt,
@@ -124,6 +123,16 @@ export async function walletStartSession() {
   }
 
   try {
+    // Support @filename syntax for reading ciphertext from file
+    if (ciphertext.startsWith('@')) {
+      const filePath = ciphertext.slice(1)
+      try {
+        ciphertext = fs.readFileSync(filePath, 'utf8').trim()
+      } catch (err) {
+        throw new Error(`Failed to read ciphertext from file '${filePath}': ${err.message}`)
+      }
+    }
+
     // Auto-detect rid if not provided
     if (!rid) {
       // Try to find matching request
@@ -149,6 +158,14 @@ export async function walletStartSession() {
       throw new Error(`Request not found: ${rid}`)
     }
 
+    const chain = normalizeChain(request.chain || 'polygon')
+
+    // Check if request is expired
+    const exp = Date.parse(request.expiresAt)
+    if (Number.isFinite(exp) && Date.now() > exp) {
+      throw new Error(`Request rid=${rid} is expired (expiresAt=${request.expiresAt}). Create a new request.`)
+    }
+
     // Decrypt ciphertext with NaCl sealed box
     const publicKey = b64urlDecode(request.publicKeyB64u)
     const privateKey = b64urlDecode(request.privateKeyB64u)
@@ -159,28 +176,71 @@ export async function walletStartSession() {
       throw new Error('Failed to decrypt ciphertext')
     }
 
-    // Parse decrypted payload
-    const payload = JSON.parse(Buffer.from(decrypted).toString('utf8'))
-
-    if (!payload.walletAddress) {
-      throw new Error('Invalid payload: missing walletAddress')
+    // Parse decrypted payload (with dapp-client jsonRevivers if available)
+    let payload
+    try {
+      const { jsonRevivers } = await import('@0xsequence/dapp-client')
+      payload = JSON.parse(Buffer.from(decrypted).toString('utf8'), jsonRevivers)
+    } catch {
+      payload = JSON.parse(Buffer.from(decrypted).toString('utf8'))
     }
 
-    // Save wallet session
+    const walletAddress = payload.walletAddress
+    const chainId = payload.chainId
+    const explicitSession = payload.explicitSession
+    const implicit = payload.implicit
+
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      throw new Error('Missing walletAddress in payload')
+    }
+    if (!chainId || typeof chainId !== 'number') {
+      throw new Error('Missing chainId in payload')
+    }
+
+    // Verify chain matches (request stores chain name, payload has chainId)
+    const net = resolveNetwork(chain)
+    if (Number(net.chainId) !== Number(chainId)) {
+      throw new Error(`Chain mismatch: request chain=${chain} (chainId=${net.chainId}) but payload chainId=${chainId}`)
+    }
+
+    if (!explicitSession || typeof explicitSession !== 'object') {
+      throw new Error('Missing explicitSession in payload')
+    }
+    if (!explicitSession.pk || typeof explicitSession.pk !== 'string') {
+      throw new Error('Missing explicitSession.pk in payload')
+    }
+    if (!implicit?.pk || !implicit?.attestation || !implicit?.identitySignature) {
+      throw new Error('Missing implicit session in payload')
+    }
+
+    // Prepare implicit session metadata
+    const implicitMeta = {
+      guard: implicit.guard,
+      loginMethod: implicit.loginMethod,
+      userEmail: implicit.userEmail
+    }
+
+    // Save wallet session (including all session data like seq-eco does)
+    const { jsonReplacers } = await import('@0xsequence/dapp-client')
     await saveWalletSession(name, {
-      walletAddress: payload.walletAddress,
-      session: payload.session,
-      chainId: request.chainId,
-      chain: request.chain,
+      walletAddress,
+      chainId,
+      chain,
+      explicitSession: JSON.stringify(explicitSession, jsonReplacers),
+      sessionPk: explicitSession.pk,
+      implicitPk: implicit.pk,
+      implicitMeta: JSON.stringify(implicitMeta, jsonReplacers),
+      implicitAttestation: JSON.stringify(implicit.attestation, jsonReplacers),
+      implicitIdentitySig: JSON.stringify(implicit.identitySignature, jsonReplacers),
       createdAt: new Date().toISOString()
     })
 
     console.log(JSON.stringify({
       ok: true,
       walletName: name,
-      walletAddress: payload.walletAddress,
-      chainId: request.chainId,
-      chain: request.chain,
+      walletAddress,
+      chainId,
+      chain,
       message: 'Session started successfully. Wallet ready for operations.'
     }, null, 2))
 

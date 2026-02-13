@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "8a5d540efcbc",
+  "session_id": "4c58b72c-8439-4694-9718-a00235b307e0",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-13T14:07:19.14918Z",
+  "branch": "feature/webhook-callback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "agents.md",
+    "skills/QUICKSTART.md"
+  ],
+  "agent": "Claude Code",
+  "checkpoint_transcript_start": 3955,
+  "transcript_lines_at_start": 3955,
+  "token_usage": {
+    "input_tokens": 752,
+    "cache_creation_tokens": 88583,
+    "cache_read_tokens": 1526268,
+    "output_tokens": 161,
+    "api_call_count": 17
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-13T14:07:18.191604Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 691,
+    "total_committed": 691,
+    "agent_percentage": 0
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "7be724092f02",
+  "strategy": "manual-commit",
+  "branch": "feature/webhook-callback",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "cli/commands/builder.mjs",
+    "cli/commands/operations.mjs",
+    "cli/commands/registry.mjs",
+    "cli/commands/wallet.mjs",
+    "cli/polygon-agent.mjs",
+    "connector-ui/.env",
+    "connector-ui/README.md",
+    "connector-ui/index.html",
+    "connector-ui/package.json",
+    "connector-ui/public/polygon-logo.svg",
+    "connector-ui/src/App.tsx",
+    "contracts/IdentityRegistry.json",
+    "contracts/ReputationRegistry.json",
+    "lib/ethauth.mjs",
+    "lib/storage.mjs",
+    "lib/token-directory.mjs",
+    "lib/utils.mjs",
+    "package.json",
+    "skills/QUICKSTART.md",
+    "skills/SKILL.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7b/e724092f02/0/metadata.json",
+      "transcript": "/7b/e724092f02/0/full.jsonl",
+      "context": "/7b/e724092f02/0/context.md",
+      "content_hash": "/7b/e724092f02/0/content_hash.txt",
+      "prompt": "/7b/e724092f02/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5967,
+    "cache_creation_tokens": 2539290,
+    "cache_read_tokens": 62851288,
+    "output_tokens": 5282,
+    "api_call_count": 623
+  }
+}

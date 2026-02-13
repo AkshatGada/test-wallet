@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "7be724092f02",
+  "session_id": "4c58b72c-8439-4694-9718-a00235b307e0",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-13T12:53:17.90577Z",
+  "branch": "feature/webhook-callback",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "cli/commands/builder.mjs",
+    "cli/commands/operations.mjs",
+    "cli/commands/registry.mjs",
+    "cli/commands/wallet.mjs",
+    "cli/polygon-agent.mjs",
+    "connector-ui/.env",
+    "connector-ui/README.md",
+    "connector-ui/index.html",
+    "connector-ui/package.json",
+    "connector-ui/public/polygon-logo.svg",
+    "connector-ui/src/App.tsx",
+    "contracts/IdentityRegistry.json",
+    "contracts/ReputationRegistry.json",
+    "lib/ethauth.mjs",
+    "lib/storage.mjs",
+    "lib/token-directory.mjs",
+    "lib/utils.mjs",
+    "package.json",
+    "skills/QUICKSTART.md",
+    "skills/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 5967,
+    "cache_creation_tokens": 2539290,
+    "cache_read_tokens": 62851288,
+    "output_tokens": 5282,
+    "api_call_count": 623
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-13T12:53:17.119911Z",
+    "agent_lines": 308,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 16,
+    "total_committed": 308,
+    "agent_percentage": 100
+  }
+}

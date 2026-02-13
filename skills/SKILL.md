@@ -50,6 +50,49 @@ node cli/polygon-agent.mjs builder setup --name "MyAgent"
 
 ### Phase 2: Ecosystem Wallet Creation
 
+#### Option A: Webhook Callback (Recommended — zero copy/paste)
+
+```bash
+# Step 1: Set environment variables
+export SEQUENCE_PROJECT_ACCESS_KEY=<access-key-from-phase-1>
+export SEQUENCE_DAPP_ORIGIN=https://your-connector-url
+export SEQUENCE_ECOSYSTEM_CONNECTOR_URL=https://your-connector-url
+
+# Step 2: Create wallet with --wait (starts local HTTP server, waits for callback)
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait
+```
+
+The CLI starts a temporary HTTP server on a random localhost port and outputs a URL. Open the URL in a browser, approve the session — the connector UI automatically POSTs the encrypted session back to the CLI. No copy/paste needed.
+
+**Output** (initial):
+```json
+{
+  "ok": true,
+  "walletName": "main",
+  "chain": "polygon",
+  "rid": "...",
+  "url": "https://connector-url/link?rid=...&callbackUrl=http://localhost:54321/callback",
+  "callbackPort": 54321,
+  "message": "Waiting for session approval (timeout 300s)... Open URL in browser."
+}
+```
+
+**Output** (after approval):
+```json
+{
+  "ok": true,
+  "walletName": "main",
+  "walletAddress": "0xEco...",
+  "chainId": 137,
+  "chain": "polygon",
+  "message": "Session started successfully. Wallet ready for operations."
+}
+```
+
+Optional: `--timeout <seconds>` to change the wait timeout (default 300s / 5 min).
+
+#### Option B: Manual ciphertext (fallback)
+
 ```bash
 # Step 1: Set environment variables
 export SEQUENCE_PROJECT_ACCESS_KEY=<access-key-from-phase-1>
@@ -187,12 +230,13 @@ Creates EOA, authenticates, creates project, returns access key. Use `--force` t
 ### Wallet
 
 ```bash
-polygon-agent wallet create --name <name> [--chain polygon]
+polygon-agent wallet create --name <name> [--chain polygon] [--wait] [--timeout <sec>]
 polygon-agent wallet start-session --name <name> --ciphertext '<blob>|@<file>' [--rid <rid>]
 polygon-agent wallet list
 ```
 
 - `wallet create`: Generates session request URL
+- `wallet create --wait`: Creates wallet and waits for callback (zero copy/paste). Starts a temp HTTP server on localhost; connector UI POSTs ciphertext back automatically. Use `--timeout` to set wait time (default 300s).
 - `wallet start-session`: Ingests ciphertext from browser approval (supports `@filename`)
 - `wallet list`: Shows all configured wallets
 
@@ -319,6 +363,8 @@ The polygon-agent-kit includes full **ERC-8004 Trustless Agents** integration fo
 | `Indexer 404/400` | Uses IndexerGateway + RPC fallback (auto-handled) |
 | `No native balance on testnet` | RPC fallback activates automatically |
 | `Session expired` | Re-run `wallet create` + `wallet start-session` flow |
+| `Ciphertext truncated (Telegram)` | Use `wallet create --wait` for zero-copy webhook callback |
+| `Timed out waiting for callback` | Increase timeout: `--wait --timeout 600` (10 min) |
 
 ## File Structure
 
@@ -339,7 +385,7 @@ The polygon-agent-kit includes full **ERC-8004 Trustless Agents** integration fo
 
 **Core Toolkit**:
 - ✅ Builder setup (3-in-1 condensed command)
-- ✅ Wallet create + start-session (NaCl encryption, @filename support)
+- ✅ Wallet create + start-session (NaCl encryption, @filename support, webhook callback)
 - ✅ Encrypted storage (AES-256-GCM, cross-platform)
 - ✅ IndexerGateway with RPC fallback (upstream fixes)
 
@@ -383,19 +429,15 @@ export SEQUENCE_DAPP_ORIGIN=https://connector-url
 export SEQUENCE_ECOSYSTEM_CONNECTOR_URL=https://connector-url
 export SEQUENCE_INDEXER_ACCESS_KEY=<indexer-key>
 
-# 3. Create wallet
-node cli/polygon-agent.mjs wallet create --name test-wallet
-# Open URL in browser, approve
-
-# 4. Start session
-echo '<ciphertext>' > /tmp/session.txt
-node cli/polygon-agent.mjs wallet start-session --name test-wallet --ciphertext @/tmp/session.txt
+# 3. Create wallet with --wait (zero copy/paste)
+node cli/polygon-agent.mjs wallet create --name test-wallet --wait
+# Open URL in browser, approve — session auto-ingested via callback
 # Fund walletAddress with MATIC + tokens
 
-# 5. Check balances
+# 4. Check balances
 node cli/polygon-agent.mjs balances --wallet test-wallet
 
-# 6. List wallets
+# 5. List wallets
 node cli/polygon-agent.mjs wallet list
 ```
 
@@ -412,6 +454,7 @@ node cli/polygon-agent.mjs wallet list
 - **State Persistence**: Request stored at `~/.polygon-agent/requests/<rid>.json`
 - **Auto-Detection**: `--rid` optional (auto-detects from request directory)
 - **File Input**: Supports `@filename` for large ciphertext blobs
+- **Webhook Callback**: `--wait` starts temp HTTP server on localhost; connector UI POSTs ciphertext directly (eliminates copy/paste, solves Telegram 4096-char truncation)
 
 ### Builder Authentication
 - **ETHAuth**: EIP-712 signed proof format

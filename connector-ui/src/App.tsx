@@ -354,14 +354,15 @@ function App() {
       const ciphertextB64u = b64urlEncode(sealed)
       setCiphertext(ciphertextB64u)
 
-      // Optional: auto-submit ciphertext to a one-shot callback URL (e.g. ngrok tunnel).
-      // This is client->server (Bloom) direct; do not proxy through the Worker backend.
+      // Optional: auto-submit ciphertext to a one-shot callback URL.
+      // Accepts localhost HTTP (for CLI --wait webhook) or any HTTPS URL.
+      const isLocalCallback = callbackUrl && (callbackUrl.startsWith('http://localhost:') || callbackUrl.startsWith('http://127.0.0.1:'))
+      const isSecureCallback = callbackUrl && callbackUrl.startsWith('https://')
       if (
         callbackUrl &&
         typeof callbackUrl === 'string' &&
         callbackUrl.length < 2048 &&
-        callbackUrl.startsWith('https://') &&
-        callbackUrl.includes('/seq-eco/')
+        (isLocalCallback || isSecureCallback)
       ) {
         try {
           const res = await fetch(callbackUrl, {

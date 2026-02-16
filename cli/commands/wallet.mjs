@@ -7,7 +7,7 @@ import http from 'node:http'
 import nacl from 'tweetnacl'
 import sealedbox from 'tweetnacl-sealedbox-js'
 import { saveWalletSession, loadWalletSession, saveWalletRequest, loadWalletRequest, listWallets } from '../../lib/storage.mjs'
-import { getArg, hasFlag, normalizeChain, resolveNetwork } from '../../lib/utils.mjs'
+import { getArg, getArgs, hasFlag, normalizeChain, resolveNetwork } from '../../lib/utils.mjs'
 
 // Base64 URL encode — matches seq-eco.mjs exactly
 function b64urlEncode(buf) {
@@ -28,6 +28,39 @@ function b64urlDecode(str) {
 // Generate random ID — matches seq-eco.mjs exactly (base64url, NOT hex)
 function randomId(bytes = 16) {
   return b64urlEncode(nacl.randomBytes(bytes))
+}
+
+// Parse session permission args and append them to a URL
+function applySessionPermissionParams(url, args) {
+  // One-off ERC20 transfer (fixed recipient + amount) — must provide both or neither
+  const usdcTo = getArg(args, '--usdc-to')
+  const usdcAmount = getArg(args, '--usdc-amount')
+  if (usdcTo || usdcAmount) {
+    if (!usdcTo || !usdcAmount) throw new Error('Must provide both --usdc-to and --usdc-amount')
+    url.searchParams.set('erc20', 'usdc')
+    url.searchParams.set('erc20To', usdcTo)
+    url.searchParams.set('erc20Amount', usdcAmount)
+  }
+
+  // Open-ended spending limits
+  const nativeLimit = getArg(args, '--native-limit') || getArg(args, '--pol-limit')
+  const usdcLimit = getArg(args, '--usdc-limit')
+  const usdtLimit = getArg(args, '--usdt-limit')
+  if (nativeLimit) url.searchParams.set('nativeLimit', nativeLimit)
+  if (usdcLimit) url.searchParams.set('usdcLimit', usdcLimit)
+  if (usdtLimit) url.searchParams.set('usdtLimit', usdtLimit)
+
+  // Generic token limits (repeatable: --token-limit USDC:50 --token-limit WETH:0.1)
+  const tokenLimits = getArgs(args, '--token-limit')
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+  if (tokenLimits.length) url.searchParams.set('tokenLimits', tokenLimits.join(','))
+
+  // Contract whitelist (repeatable: --contract 0x8004... --contract 0x8004...)
+  const contracts = getArgs(args, '--contract')
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+  if (contracts.length) url.searchParams.set('contracts', contracts.join(','))
 }
 
 // Wallet create command (formerly create-request)
@@ -83,6 +116,9 @@ export async function walletCreate() {
     if (projectAccessKey) {
       url.searchParams.set('accessKey', projectAccessKey)
     }
+
+    // Add session permission params (spending limits, token limits, contracts)
+    applySessionPermissionParams(url, args)
 
     console.log(JSON.stringify({
       ok: true,
@@ -372,6 +408,9 @@ export async function walletCreateAndWait() {
     if (projectAccessKey) {
       url.searchParams.set('accessKey', projectAccessKey)
     }
+
+    // Add session permission params (spending limits, token limits, contracts)
+    applySessionPermissionParams(url, args)
 
     console.log(JSON.stringify({
       ok: true,

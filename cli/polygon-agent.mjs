@@ -89,12 +89,23 @@ WALLET (Create ecosystem wallet):
   wallet address --name <name>          Show wallet address
   wallet remove --name <name>           Remove wallet
 
+  Session permission options (for wallet create):
+    --native-limit <amount>             POL spending limit (e.g. 1.5)
+    --usdc-limit <amount>               USDC spending limit (e.g. 50)
+    --usdt-limit <amount>               USDT spending limit (e.g. 50)
+    --token-limit <SYM:AMT>             Token limit, repeatable (e.g. WETH:0.1)
+    --usdc-to <addr> --usdc-amount <n>  One-off USDC transfer (fixed recipient)
+    --contract <addr>                   Whitelist contract, repeatable
+
 OPERATIONS (Token & swap):
   balances --wallet <name>              Check token balances
   send --wallet <name> --to <addr>      Send native token (auto-detect)
   send-native --wallet <name> --to ...  Send native token (POL/MATIC)
+    --direct                            Bypass ValueForwarder (raw native send)
   send-token --wallet <name> --symbol   Send ERC20 by symbol
-  swap --wallet <name> --from --to      Execute DEX swap (coming soon)
+  swap --wallet <name> --from --to      Execute DEX swap
+
+  All send/swap commands support: --broadcast (execute), --chain <name|id>
 
 REGISTRY (ERC-8004 on Polygon):
   register --wallet <name> --name <n>   Register agent identity
@@ -108,6 +119,11 @@ Environment Variables:
   SEQUENCE_PROJECT_ACCESS_KEY           Project access key (from builder setup)
   SEQUENCE_DAPP_ORIGIN                  Connector URL for wallet creation
   SEQUENCE_INDEXER_ACCESS_KEY           Indexer key for balance checks
+  TRAILS_TOKEN_MAP_JSON                 Token address overrides for swap (JSON)
+
+Debug:
+  POLYGON_AGENT_DEBUG_FETCH=1           Log all HTTP requests to ~/.polygon-agent/fetch-debug.log
+  POLYGON_AGENT_DEBUG_FEE=1             Dump fee options to stderr before sending
 
 For detailed help: polygon-agent <command> --help
 `)

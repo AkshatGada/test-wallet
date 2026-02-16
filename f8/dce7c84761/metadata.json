@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "f8dce7c84761",
+  "strategy": "manual-commit",
+  "branch": "feature/webhook-callback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/commands/wallet.mjs",
+    "cli/polygon-agent.mjs",
+    "lib/utils.mjs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f8/dce7c84761/0/metadata.json",
+      "transcript": "/f8/dce7c84761/0/full.jsonl",
+      "context": "/f8/dce7c84761/0/context.md",
+      "content_hash": "/f8/dce7c84761/0/content_hash.txt",
+      "prompt": "/f8/dce7c84761/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 181298,
+    "cache_read_tokens": 4190200,
+    "output_tokens": 320,
+    "api_call_count": 36
+  }
+}

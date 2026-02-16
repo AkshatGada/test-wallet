@@ -89,6 +89,14 @@ WALLET (Create ecosystem wallet):
   wallet address --name <name>          Show wallet address
   wallet remove --name <name>           Remove wallet
 
+  Session permission options (for wallet create):
+    --native-limit <amount>             POL spending limit (e.g. 1.5)
+    --usdc-limit <amount>               USDC spending limit (e.g. 50)
+    --usdt-limit <amount>               USDT spending limit (e.g. 50)
+    --token-limit <SYM:AMT>             Token limit, repeatable (e.g. WETH:0.1)
+    --usdc-to <addr> --usdc-amount <n>  One-off USDC transfer (fixed recipient)
+    --contract <addr>                   Whitelist contract, repeatable
+
 OPERATIONS (Token & swap):
   balances --wallet <name>              Check token balances
   send --wallet <name> --to <addr>      Send native token (auto-detect)

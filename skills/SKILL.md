@@ -64,6 +64,58 @@ node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait
 
 The CLI starts a temporary HTTP server on a random localhost port and outputs a URL. Open the URL in a browser, approve the session — the connector UI automatically POSTs the encrypted session back to the CLI. No copy/paste needed.
 
+#### Session Permission Parameters
+
+When creating a wallet, you can control the session's spending permissions via flags. Without these, the session gets bare-bones defaults and the agent may not be able to transact.
+
+**Token spending limits** — set maximum amounts the session can transfer:
+```bash
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait \
+  --native-limit 10 \
+  --usdc-limit 100 \
+  --usdt-limit 50
+```
+
+**Generic token limits** — set limits for any token by symbol:
+```bash
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait \
+  --token-limit WETH:0.5 \
+  --token-limit DAI:1000
+```
+
+**One-off ERC20 permission** — scope a single transfer to a specific recipient and amount:
+```bash
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait \
+  --usdc-to 0xRecipient... --usdc-amount 25
+```
+Both `--usdc-to` and `--usdc-amount` must be provided together.
+
+**Contract whitelist** — add specific contracts to the session's allowed targets:
+```bash
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait \
+  --contract 0xContractAddress...
+```
+
+**Combined example** (agent with full permissions):
+```bash
+node cli/polygon-agent.mjs wallet create --name main --chain polygon --wait \
+  --native-limit 5 \
+  --usdc-limit 200 \
+  --usdt-limit 100 \
+  --token-limit WETH:1 \
+  --contract 0xABAAd93EeE2a569cF0632f39B10A9f5D734777ca
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--native-limit <amount>` | Max native currency (POL) the session can spend |
+| `--usdc-limit <amount>` | Max USDC the session can transfer |
+| `--usdt-limit <amount>` | Max USDT the session can transfer |
+| `--token-limit <SYM:amount>` | Max amount for any token by symbol (repeatable) |
+| `--usdc-to <addr>` | Restrict USDC transfer to this recipient (requires `--usdc-amount`) |
+| `--usdc-amount <amount>` | USDC transfer amount for `--usdc-to` recipient |
+| `--contract <addr>` | Whitelist a contract address for the session (repeatable) |
+
 **Output** (initial):
 ```json
 {
@@ -230,12 +282,15 @@ Creates EOA, authenticates, creates project, returns access key. Use `--force` t
 ### Wallet
 
 ```bash
-polygon-agent wallet create --name <name> [--chain polygon] [--wait] [--timeout <sec>]
+polygon-agent wallet create --name <name> [--chain polygon] [--wait] [--timeout <sec>] \
+  [--native-limit <amt>] [--usdc-limit <amt>] [--usdt-limit <amt>] \
+  [--token-limit <SYM:amt>] [--usdc-to <addr> --usdc-amount <amt>] \
+  [--contract <addr>]
 polygon-agent wallet start-session --name <name> --ciphertext '<blob>|@<file>' [--rid <rid>]
 polygon-agent wallet list
 ```
 
-- `wallet create`: Generates session request URL
+- `wallet create`: Generates session request URL with optional permission params
 - `wallet create --wait`: Creates wallet and waits for callback (zero copy/paste). Starts a temp HTTP server on localhost; connector UI POSTs ciphertext back automatically. Use `--timeout` to set wait time (default 300s).
 - `wallet start-session`: Ingests ciphertext from browser approval (supports `@filename`)
 - `wallet list`: Shows all configured wallets
@@ -244,15 +299,15 @@ polygon-agent wallet list
 
 ```bash
 polygon-agent balances --wallet <name> [--chain <chain>]
-polygon-agent send-native --wallet <name> --to <addr> --amount <num> [--broadcast]
+polygon-agent send-native --wallet <name> --to <addr> --amount <num> [--broadcast] [--direct]
 polygon-agent send-token --wallet <name> --symbol <SYM> --to <addr> --amount <num> [--broadcast]
-polygon-agent swap --wallet <name> --from <SYM> --to <SYM> --amount <num> [--broadcast]
+polygon-agent swap --wallet <name> --from <SYM> --to <SYM> --amount <num> [--broadcast] [--slippage <num>]
 ```
 
 - `balances`: Uses IndexerGateway with RPC fallback for testnets
-- `send-native`: Send native POL/MATIC via DappClient
+- `send-native`: Send native POL/MATIC via ValueForwarder contract. Use `--direct` to bypass ValueForwarder and send a raw native transfer (useful when session permissions allow direct sends)
 - `send-token`: Send ERC20 by symbol (resolves via token-directory)
-- `swap`: Placeholder (requires @0xtrails/api)
+- `swap`: DEX swap via Trails API with configurable slippage
 
 ### Registry (ERC-8004)
 
@@ -293,6 +348,11 @@ polygon-agent give-feedback --wallet <name> --agent-id <id> --value <score> [--t
 |----------|---------|---------|
 | `SEQUENCE_BUILDER_API_URL` | Builder API endpoint | `https://api.sequence.build` |
 | `SEQUENCE_INDEXER_URL` | Indexer URL override | `https://indexer.sequence.app/rpc/IndexerGateway/...` |
+| `SEQUENCE_ECOSYSTEM_WALLET_URL` | Ecosystem wallet URL | `https://acme-wallet.ecosystem-demo.xyz` |
+| `TRAILS_API_KEY` | Trails API key for swaps | Falls back to `SEQUENCE_PROJECT_ACCESS_KEY` |
+| `TRAILS_TOKEN_MAP_JSON` | JSON override for token addresses per chain (e.g. `{"137":{"USDC":"0x..."}}`) | Token-directory lookup |
+| `POLYGON_AGENT_DEBUG_FETCH` | Log all HTTP requests/responses to `~/.polygon-agent/fetch-debug.log` | Off |
+| `POLYGON_AGENT_DEBUG_FEE` | Dump fee options to stderr for debugging | Off |
 
 ## Key Features
 
@@ -362,7 +422,9 @@ The polygon-agent-kit includes full **ERC-8004 Trustless Agents** integration fo
 | `Missing wallet` | Check `wallet list`, re-run `wallet create` + `wallet start-session` |
 | `Indexer 404/400` | Uses IndexerGateway + RPC fallback (auto-handled) |
 | `No native balance on testnet` | RPC fallback activates automatically |
-| `Session expired` | Re-run `wallet create` + `wallet start-session` flow |
+| `Session expired` | Sessions have a 24h deadline. Re-run `wallet create` + `wallet start-session` flow |
+| `Explicit session has expired (deadline ...)` | Session deadline has passed. Re-link wallet to mint a fresh session |
+| `Fee option errors / insufficient balance` | Set `POLYGON_AGENT_DEBUG_FEE=1` to inspect fee options. Ensure wallet holds native currency for fees |
 | `Ciphertext truncated (Telegram)` | Use `wallet create --wait` for zero-copy webhook callback |
 | `Timed out waiting for callback` | Increase timeout: `--wait --timeout 600` (10 min) |
 

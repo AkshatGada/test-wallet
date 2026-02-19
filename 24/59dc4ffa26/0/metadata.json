@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "2459dc4ffa26",
+  "session_id": "4c58b72c-8439-4694-9718-a00235b307e0",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-19T16:41:05.399912Z",
+  "branch": "feature/x402-pay",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "skills/QUICKSTART.md"
+  ],
+  "agent": "Claude Code",
+  "checkpoint_transcript_start": 5283,
+  "transcript_lines_at_start": 5283,
+  "token_usage": {
+    "input_tokens": 19,
+    "cache_creation_tokens": 68767,
+    "cache_read_tokens": 686294,
+    "output_tokens": 229,
+    "api_call_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-19T16:41:04.046699Z",
+    "agent_lines": 0,
+    "human_added": 1386,
+    "human_modified": 30,
+    "human_removed": 0,
+    "total_committed": 1386,
+    "agent_percentage": 0
+  }
+}

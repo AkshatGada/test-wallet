@@ -4,6 +4,7 @@
 
 import fs from 'node:fs'
 import http from 'node:http'
+import { spawn } from 'node:child_process'
 import nacl from 'tweetnacl'
 import sealedbox from 'tweetnacl-sealedbox-js'
 import { saveWalletSession, loadWalletSession, saveWalletRequest, loadWalletRequest, listWallets } from '../../lib/storage.mjs'
@@ -294,6 +295,51 @@ export async function walletStartSession() {
   }
 }
 
+// Start an ngrok HTTP tunnel on the given port.
+// Requires ngrok to be installed and authenticated on this machine.
+// Polls the ngrok local API at 127.0.0.1:4040 until the public HTTPS URL is available.
+async function startNgrokTunnel(port) {
+  const child = spawn('ngrok', ['http', String(port)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env }
+  })
+
+  const logs = []
+  const onData = (buf) => {
+    const s = String(buf || '').trim()
+    if (s) logs.push(s.slice(0, 400))
+  }
+  child.stdout.on('data', onData)
+  child.stderr.on('data', onData)
+
+  const deadline = Date.now() + 15000
+  let publicUrl = null
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250))
+    try {
+      const res = await fetch('http://127.0.0.1:4040/api/tunnels')
+      if (!res.ok) continue
+      const data = await res.json()
+      const tunnels = Array.isArray(data?.tunnels) ? data.tunnels : []
+      const https = tunnels.find((t) => String(t?.public_url || '').startsWith('https://'))
+      if (https?.public_url) {
+        publicUrl = https.public_url
+        break
+      }
+    } catch {
+      // API not ready yet, keep polling
+    }
+  }
+
+  if (!publicUrl) {
+    try { child.kill('SIGTERM') } catch {}
+    throw new Error(`Failed to establish ngrok tunnel within 15s (logs: ${logs.slice(-5).join(' | ')})`)
+  }
+
+  return { child, publicUrl }
+}
+
 // Wallet create-and-wait command: starts temp HTTP server, waits for connector UI callback
 export async function walletCreateAndWait() {
   const args = process.argv.slice(3)
@@ -327,6 +373,11 @@ export async function walletCreateAndWait() {
       projectAccessKey: projectAccessKey || null
     })
 
+    // Always use a one-shot secret token in the callback path to prevent accidental
+    // hits on the temporarily-public ngrok URL.
+    const callbackToken = randomId(24)
+    const callbackPath = `/callback/${callbackToken}`
+
     // Start temp HTTP server on random port (localhost only)
     const { resolve: resolveCallback, reject: rejectCallback, promise: callbackPromise } = promiseWithResolvers()
 
@@ -352,8 +403,8 @@ h2{margin:0 0 .5rem;font-size:1.25rem;color:#22c55e}p{margin:0;font-size:.875rem
         return
       }
 
-      // Only accept POST /callback
-      if (req.method !== 'POST' || !req.url.startsWith('/callback')) {
+      // Only accept POST to the expected path (exact match; token path prevents random hits)
+      if (req.method !== 'POST' || req.url !== callbackPath) {
         res.writeHead(404, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'Not found' }))
         return
@@ -403,6 +454,30 @@ h2{margin:0 0 .5rem;font-size:1.25rem;color:#22c55e}p{margin:0;font-size:.875rem
     })
     const port = server.address().port
 
+    // Try to start ngrok for a public HTTPS callback URL (works for both local and remote machines).
+    // If ngrok is unavailable, fall back to localhost (user must open the URL on the same machine).
+    let ngrok = null
+    let callbackUrl
+    let ngrokWarning = null
+
+    try {
+      ngrok = await startNgrokTunnel(port)
+      callbackUrl = `${ngrok.publicUrl}${callbackPath}`
+    } catch (e) {
+      ngrokWarning = `ngrok unavailable (${e.message}); falling back to localhost. Open the URL on the same machine as the agent.`
+      callbackUrl = `http://localhost:${port}${callbackPath}`
+    }
+
+    const cleanup = () => {
+      try { server.close() } catch {}
+      try { ngrok?.child?.kill('SIGTERM') } catch {}
+    }
+
+    process.once('SIGINT', () => {
+      cleanup()
+      process.exit(130)
+    })
+
     // Build connector URL with callback
     const url = new URL(connectorUrl)
     url.pathname = url.pathname.replace(/\/$/, '') + '/link'
@@ -410,7 +485,7 @@ h2{margin:0 0 .5rem;font-size:1.25rem;color:#22c55e}p{margin:0;font-size:.875rem
     url.searchParams.set('wallet', name)
     url.searchParams.set('pub', pub)
     url.searchParams.set('chain', chain)
-    url.searchParams.set('callbackUrl', `http://localhost:${port}/callback`)
+    url.searchParams.set('callbackUrl', callbackUrl)
 
     if (projectAccessKey) {
       url.searchParams.set('accessKey', projectAccessKey)
@@ -419,16 +494,18 @@ h2{margin:0 0 .5rem;font-size:1.25rem;color:#22c55e}p{margin:0;font-size:.875rem
     // Add session permission params (spending limits, token limits, contracts)
     applySessionPermissionParams(url, args)
 
-    console.log(JSON.stringify({
+    const output = {
       ok: true,
       walletName: name,
       chain,
       rid,
       url: url.toString(),
-      callbackPort: port,
+      callbackUrl,
       expiresAt,
       message: `Waiting for session approval (timeout ${timeoutSec}s)... Open URL in browser.`
-    }, null, 2))
+    }
+    if (ngrokWarning) output.warning = ngrokWarning
+    console.log(JSON.stringify(output, null, 2))
 
     // Wait for callback or timeout
     const timeoutPromise = new Promise((_, reject) => {
@@ -439,7 +516,7 @@ h2{margin:0 0 .5rem;font-size:1.25rem;color:#22c55e}p{margin:0;font-size:.875rem
     try {
       ciphertext = await Promise.race([callbackPromise, timeoutPromise])
     } finally {
-      server.close()
+      cleanup()
     }
 
     // Decrypt and save session

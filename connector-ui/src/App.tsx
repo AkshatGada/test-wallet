@@ -99,19 +99,14 @@ function App() {
   const getSafeCallbackUrl = (rawUrl: string): string | null => {
     if (!rawUrl) return null
     try {
-      // Allow relative paths (same-origin only)
-      if (rawUrl.startsWith('/')) {
-        return rawUrl
-      }
+      if (rawUrl.startsWith('/')) return rawUrl
       const url = new URL(rawUrl)
-      // Only allow secure HTTP(S) callbacks
-      if (url.protocol !== 'https:') {
-        return null
+      if (url.protocol === 'https:') return url.toString()
+      if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
+        return url.toString()
       }
-      // Optionally, further restrict by hostname/origin here if needed.
-      return url.toString()
+      return null
     } catch {
-      // If the URL constructor throws, treat as invalid
       return null
     }
   }
@@ -404,18 +399,33 @@ function App() {
       const ciphertextB64u = b64urlEncode(sealed)
       setCiphertext(ciphertextB64u)
 
-      // Auto-submit ciphertext to a one-shot callback URL via hidden form POST.
-      // Form submissions are top-level navigations (like OAuth redirects), so they
-      // work from HTTPS pages to HTTP localhost — no mixed-content blocking.
-      const isLocalCallback = callbackUrl && (callbackUrl.startsWith('http://localhost:') || callbackUrl.startsWith('http://127.0.0.1:'))
-      const isSecureCallback = callbackUrl && callbackUrl.startsWith('https://')
+      // Deliver ciphertext to the callback URL.
+      // HTTPS callbacks (ngrok): use fetch so the page stays and can show fallback ciphertext on error.
+      // Localhost callbacks: must use form submission — fetch is blocked by mixed-content from HTTPS pages.
       const safeCallbackUrl = getSafeCallbackUrl(callbackUrl)
-      if (
-        safeCallbackUrl &&
-        typeof safeCallbackUrl === 'string' &&
-        safeCallbackUrl.length < 2048 &&
-        (isLocalCallback || isSecureCallback)
-      ) {
+      const isHttpsCallback = !!callbackUrl && callbackUrl.startsWith('https://')
+      const isLocalCallback = !!callbackUrl && (callbackUrl.startsWith('http://localhost:') || callbackUrl.startsWith('http://127.0.0.1:'))
+
+      if (isHttpsCallback && safeCallbackUrl) {
+        try {
+          const res = await fetch(safeCallbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rid, ciphertext: ciphertextB64u })
+          })
+          if (res.ok) {
+            setCallbackSent(true)
+          } else {
+            setCallbackFailed(true)
+          }
+        } catch {
+          setCallbackFailed(true)
+        }
+        return
+      }
+
+      if (isLocalCallback && safeCallbackUrl) {
+        // Form submission is a top-level navigation — browsers allow it across HTTP/HTTPS boundaries.
         setCallbackSent(true)
         const form = document.createElement('form')
         form.method = 'POST'
@@ -429,17 +439,20 @@ function App() {
         const ctInput = document.createElement('input')
         ctInput.type = 'hidden'
         ctInput.name = 'ciphertext'
-
-      if (callbackUrl && !safeCallbackUrl) {
-        setCallbackFailed(true)
-        setError('Invalid or untrusted callbackUrl parameter; redirect has been blocked.')
-      }
         ctInput.value = ciphertextB64u
         form.appendChild(ctInput)
         document.body.appendChild(form)
         form.submit()
-        return // Browser will navigate away
+        return
       }
+
+      if (callbackUrl && !safeCallbackUrl) {
+        setCallbackFailed(true)
+        setError('Invalid or untrusted callbackUrl; redirect has been blocked.')
+        return
+      }
+
+      // No callback URL — fetch balances and show ciphertext for manual copy
       try {
         const all = await fetchBalancesAllChains(addr)
         const picked = pickChainBalances(all, chainId)

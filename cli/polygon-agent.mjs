@@ -114,8 +114,8 @@ SETUP:
   setup --name <name>                 One-command project setup (EOA + auth + access key)
 
 WALLET:
-  wallet create [--name <name>]       Create wallet (auto-waits for approval by default)
-  wallet create --no-wait             Generate session URL only (manual flow)
+  wallet create [--name <name>]       Create wallet — opens ngrok tunnel for automatic session delivery
+  wallet create --no-wait             Generate session URL only (manual copy-paste flow)
   wallet import --ciphertext <blob>   Import session from ciphertext (alias: start-session)
   wallet list                         List all wallets
   wallet address [--name <name>]      Show wallet address

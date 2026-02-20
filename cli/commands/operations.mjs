@@ -1,7 +1,7 @@
 // Operations commands - balances, send, swap
 // Uses shared dapp-client wrapper for transaction execution
 
-import { loadWalletSession } from '../../lib/storage.mjs'
+import { loadWalletSession, loadBuilderConfig } from '../../lib/storage.mjs'
 import { runDappClientTx } from '../../lib/dapp-client.mjs'
 import { getArg, getArgs, hasFlag, resolveNetwork, formatUnits, parseUnits, getIndexerUrl, getExplorerUrl, getRpcUrl } from '../../lib/utils.mjs'
 import { resolveErc20BySymbol } from '../../lib/token-directory.mjs'
@@ -530,8 +530,8 @@ export async function send() {
   }
 }
 
-// x402 pay command — calls an x402-protected HTTP resource using the session key as signer
-// x402-fetch auto-handles 402 → pay → retry flow
+// x402 pay command — calls an x402-protected HTTP resource
+// Flow: probe 402 → smart wallet sends exact USDC to builder EOA → builder EOA signs x402
 export async function x402Pay() {
   const args = process.argv.slice(2)
   const walletName = getArg(args, '--wallet') || 'main'
@@ -546,49 +546,81 @@ export async function x402Pay() {
   }
 
   try {
-    const session = await loadWalletSession(walletName)
+    const [session, builderConfig] = await Promise.all([
+      loadWalletSession(walletName),
+      loadBuilderConfig(),
+    ])
     if (!session) throw new Error(`Wallet not found: ${walletName}`)
+    if (!builderConfig?.privateKey) throw new Error('Builder EOA not found. Run: polygon-agent setup')
 
-    // explicitSession.pk is the session signing key stored when the user approved the wallet
-    const pk = session?.explicitSession?.pk
-    if (!pk) throw new Error('No session private key found in wallet. Re-link wallet via wallet create.')
-
-    // Build viem account from session key
     const { privateKeyToAccount } = await import('viem/accounts')
-    const { wrapFetchWithPaymentFromConfig, decodePaymentResponseHeader } = await import('@x402/fetch')
+    const { wrapFetchWithPayment, x402Client, x402HTTPClient, decodePaymentResponseHeader } = await import('@x402/fetch')
     const { ExactEvmScheme } = await import('@x402/evm')
 
-    const account = privateKeyToAccount(pk)
+    // Builder EOA is the x402 signer — it will hold the USDC for payment
+    const eoaAccount = privateKeyToAccount(builderConfig.privateKey)
 
-    // wrapFetchWithPaymentFromConfig: eip155:* covers all EVM chains including Polygon
-    const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
-      schemes: [{ network: 'eip155:*', client: new ExactEvmScheme(account) }]
+    // Step 1: probe the endpoint to get payment requirements (amount + asset)
+    const probe = await fetch(url, { method })
+    if (probe.status !== 402) {
+      // Not payment-gated — return response directly
+      const contentType = probe.headers.get('content-type') || ''
+      const data = contentType.includes('application/json') ? await probe.json() : await probe.text()
+      console.log(JSON.stringify({ ok: probe.ok, status: probe.status, data }, null, 2))
+      return
+    }
+
+    const httpClient = new x402HTTPClient(new x402Client())
+    const paymentRequired = httpClient.getPaymentRequiredResponse(n => probe.headers.get(n), {})
+    const req = paymentRequired.accepts[0]
+    if (!req) throw new Error('No payment requirements in 402 response')
+
+    const { amount, asset, network: paymentNetwork } = req
+
+    // Step 2: fund builder EOA from smart wallet (exact payment amount)
+    // Derive chain from the 402 network field (e.g. "eip155:84532" → 84532)
+    // falling back to --chain arg or session chain
+    const chainArg = getArg(args, '--chain')
+    const chainFromPayment = paymentNetwork?.startsWith('eip155:') ? paymentNetwork.split(':')[1] : null
+    const resolvedNetwork = resolveNetwork(chainArg || chainFromPayment || session.chain || 'polygon')
+    const pad = (hex, n = 64) => String(hex).replace(/^0x/, '').padStart(n, '0')
+    const transferData = '0xa9059cbb' + pad(eoaAccount.address) + pad('0x' + BigInt(amount).toString(16))
+
+    process.stderr.write(`Funding EOA ${eoaAccount.address} with ${amount} units of ${asset}...\n`)
+    const fundResult = await runDappClientTx({
+      walletName,
+      chainId: resolvedNetwork.chainId,
+      transactions: [{ to: asset, value: 0n, data: transferData }],
+      broadcast: true,
+      preferNativeFee: true,
     })
+    process.stderr.write(`Funded via tx: ${fundResult.txHash}\n`)
 
-    // Parse --header Key:Value args into a headers object
+    // Step 3: make the x402 request signed by builder EOA
+    const client = new x402Client()
+    client.register('eip155:*', new ExactEvmScheme(eoaAccount))
+    const fetchWithPayment = wrapFetchWithPayment(fetch, client)
+
+    // Parse --header Key:Value args
     const headers = {}
     for (const h of headerArgs) {
       const idx = h.indexOf(':')
       if (idx > 0) headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim()
     }
 
-    // Make request — x402-fetch handles 402 automatically
     const response = await fetchWithPayment(url, {
       method,
       headers: Object.keys(headers).length ? headers : undefined,
       body: body || undefined,
     })
 
-    // Decode X-PAYMENT-RESPONSE header if present
-    const paymentResponseHeader = response.headers.get('X-PAYMENT-RESPONSE')
+    // Decode payment response header
+    const paymentResponseHeader = response.headers.get('PAYMENT-RESPONSE') || response.headers.get('X-PAYMENT-RESPONSE')
     let payment = null
     if (paymentResponseHeader) {
-      try {
-        payment = decodePaymentResponseHeader(paymentResponseHeader)
-      } catch (_) { /* ignore decode errors */ }
+      try { payment = decodePaymentResponseHeader(paymentResponseHeader) } catch (_) {}
     }
 
-    // Parse response body
     const contentType = response.headers.get('content-type') || ''
     const data = contentType.includes('application/json') ? await response.json() : await response.text()
 
@@ -596,14 +628,9 @@ export async function x402Pay() {
       ok: response.ok,
       status: response.status,
       walletAddress: session.walletAddress,
-      signerAddress: account.address,
-      payment: payment ? {
-        settled: true,
-        payer: payment.from,
-        payee: payment.to,
-        amount: payment.value,
-        transaction: payment.transaction,
-      } : null,
+      signerAddress: eoaAccount.address,
+      funded: { amount, asset, txHash: fundResult.txHash },
+      payment: payment ? { settled: true, transaction: payment.transaction } : null,
       data,
     }, null, 2))
 

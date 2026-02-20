@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "6ca85b0bc0dd",
+  "strategy": "manual-commit",
+  "branch": "feature/x402-pay",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/commands/operations.mjs",
+    "cli/polygon-agent.mjs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6c/a85b0bc0dd/0/metadata.json",
+      "transcript": "/6c/a85b0bc0dd/0/full.jsonl",
+      "context": "/6c/a85b0bc0dd/0/context.md",
+      "content_hash": "/6c/a85b0bc0dd/0/content_hash.txt",
+      "prompt": "/6c/a85b0bc0dd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 65,
+    "cache_creation_tokens": 128573,
+    "cache_read_tokens": 4180130,
+    "output_tokens": 471,
+    "api_call_count": 47
+  }
+}
